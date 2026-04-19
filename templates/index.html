@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>牛客AI面试教练</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>牛客AI面试教练</h1>
+            <p class="subtitle">智能面试分析与报告生成</p>
+        </header>
+
+        <main>
+            <section id="input-section" class="card">
+                <h2>输入信息</h2>
+                <form id="generate-form">
+                    <div class="form-group">
+                        <label for="position-name">岗位名称 <span class="required">*</span></label>
+                        <input type="text" id="position-name" placeholder="例如：Java工程师、AI工程师" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>岗位介绍（可选）</label>
+                        <div class="jd-input-type">
+                            <label class="radio-label">
+                                <input type="radio" name="jd-type" value="none" checked>
+                                <span>无</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="jd-type" value="text">
+                                <span>文字输入</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="jd-type" value="image">
+                                <span>截图上传</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="jd-text-container" class="form-group hidden">
+                        <label for="jd-text">岗位描述文字</label>
+                        <textarea id="jd-text" rows="6" placeholder="粘贴岗位描述..."></textarea>
+                    </div>
+
+                    <div id="jd-image-container" class="form-group hidden">
+                        <label>岗位截图</label>
+                        <div class="upload-area" id="jd-upload-area">
+                            <input type="file" id="jd-file" accept="image/*" hidden>
+                            <div class="upload-placeholder">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <polyline points="21 15 16 10 5 21"/>
+                                </svg>
+                                <p>点击或拖拽上传截图</p>
+                                <span class="file-hint">支持 JPG/PNG/WebP</span>
+                            </div>
+                            <div class="upload-preview hidden">
+                                <img id="jd-preview" src="" alt="预览">
+                                <button type="button" class="remove-btn" id="remove-jd">&times;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="resume-file">简历PDF <span class="required">*</span></label>
+                        <div class="upload-area" id="resume-upload-area">
+                            <input type="file" id="resume-input" accept=".pdf" hidden>
+                            <div class="upload-placeholder">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                    <polyline points="10 9 9 9 8 9"/>
+                                </svg>
+                                <p>点击或拖拽上传简历PDF</p>
+                                <span class="file-hint">仅支持 PDF 格式，最大 10MB</span>
+                            </div>
+                            <div class="upload-preview hidden">
+                                <div class="file-info">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                    </svg>
+                                    <span id="resume-filename"></span>
+                                </div>
+                                <button type="button" class="remove-btn" id="remove-resume">&times;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="crawl-count">抓取面经数量</label>
+                        <input type="number" id="crawl-count" value="10" min="1" max="50">
+                    </div>
+
+                    <button type="submit" id="generate-btn" class="btn-primary">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                        开始生成报告
+                    </button>
+                </form>
+            </section>
+
+            <section id="progress-section" class="card hidden">
+                <h2>生成进度</h2>
+                <div class="progress-container">
+                    <div class="progress-steps">
+                        <div class="step" data-step="1">
+                            <div class="step-icon">1</div>
+                            <div class="step-label">解析输入</div>
+                        </div>
+                        <div class="step" data-step="2">
+                            <div class="step-icon">2</div>
+                            <div class="step-label">抓取面经</div>
+                        </div>
+                        <div class="step" data-step="3">
+                            <div class="step-icon">3</div>
+                            <div class="step-label">生成模块</div>
+                        </div>
+                        <div class="step" data-step="4">
+                            <div class="step-icon">4</div>
+                            <div class="step-label">保存报告</div>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <p class="progress-text" id="progress-text">准备中...</p>
+                </div>
+            </section>
+
+            <section id="report-section" class="card hidden">
+                <div class="report-header">
+                    <h2>面试分析报告</h2>
+                    <div class="report-actions">
+                        <button id="export-btn" class="btn-secondary">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            导出Markdown
+                        </button>
+                    </div>
+                </div>
+
+                <div class="module-tabs" id="module-tabs">
+                    <button class="tab-btn active" data-module="all">全部</button>
+                </div>
+
+                <div class="module-content" id="module-content"></div>
+            </section>
+
+            <section id="history-section" class="card">
+                <h2>历史报告</h2>
+                <div id="history-list" class="history-list">
+                    <p class="empty-text">暂无历史报告</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
