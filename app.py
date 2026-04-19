@@ -36,6 +36,17 @@ MODULE_NAMES = {
     "recommended_resources": "推荐复习资料",
 }
 
+MODULE_ICONS = {
+    "overall_evaluation": "📊",
+    "job_analysis": "💼",
+    "high_freq_categories": "📚",
+    "high_freq_list": "📝",
+    "project_deep_dive": "🔍",
+    "behavioral_prep": "🤝",
+    "on_site_strategies": "⚡",
+    "recommended_resources": "📖",
+}
+
 LABEL_MAP = {
     "title": "标题",
     "summary": "总结",
@@ -89,6 +100,11 @@ LABEL_MAP = {
     "coping_techniques": "应对技巧",
 }
 
+LIST_KEYS = {"resume_suggestions", "core_requirements", "tech_stack", "soft_skills"}
+QUESTION_KEYS = {"questions", "predicted_questions", "possible_questions"}
+RESOURCE_KEYS = {"books", "courses", "websites", "interview_exps"}
+SCALAR_KEYS = {"summary", "match_score", "match_level"}
+
 
 def format_label(key):
     return LABEL_MAP.get(key, key)
@@ -96,6 +112,140 @@ def format_label(key):
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _format_list_items(items, indent=0):
+    prefix = "  " * indent
+    lines = []
+    for item in items:
+        if isinstance(item, dict):
+            for k, v in item.items():
+                if isinstance(v, list):
+                    lines.append(f"{prefix}- **{format_label(k)}**:")
+                    lines.extend(f"{prefix}  - {sub}" for sub in v)
+                else:
+                    lines.append(f"{prefix}- **{format_label(k)}**: {v}")
+        else:
+            lines.append(f"{prefix}- {item}")
+    return lines
+
+
+def _format_question_item(item, index):
+    lines = []
+    if isinstance(item, dict):
+        question = item.get("question", "")
+        lines.append(f"**{index}. {question}**\n")
+        for k, v in item.items():
+            if k == "question":
+                continue
+            if k in ("frequency", "difficulty", "depth", "match_score"):
+                lines.append(f"- **{format_label(k)}**: {v}")
+            elif isinstance(v, list):
+                lines.append(f"- **{format_label(k)}**:")
+                lines.extend(f"  - {sub}" for sub in v)
+            elif isinstance(v, str):
+                lines.append(f"- **{format_label(k)}**: {v}")
+    else:
+        lines.append(f"{index}. {item}")
+    return lines
+
+
+def _format_module_to_markdown(module_key, module_data):
+    lines = []
+    if not isinstance(module_data, dict):
+        return lines
+
+    for key, value in sorted(module_data.items(), key=lambda x: (
+        0 if x[0] in QUESTION_KEYS | SCALAR_KEYS else 1
+    )):
+        label = format_label(key)
+
+        if key in SCALAR_KEYS:
+            lines.append(f"### {label}\n")
+            lines.append(f"**{value}**\n" if isinstance(value, (int, float)) else f"{value}\n")
+
+        elif key in LIST_KEYS:
+            lines.append(f"### {label}\n")
+            if isinstance(value, list):
+                lines.extend(f"- {item}" for item in value)
+            lines.append("")
+
+        elif key in QUESTION_KEYS:
+            lines.append(f"### {label}\n")
+            if isinstance(value, list):
+                for i, item in enumerate(value, 1):
+                    lines.extend(_format_question_item(item, i))
+                    lines.append("")
+
+        elif key == "categories":
+            lines.append(f"### {label}\n")
+            if isinstance(value, list):
+                lines.append("| 维度 | 考察重点 | 准备建议 |")
+                lines.append("|------|----------|----------|")
+                for cat in value:
+                    if isinstance(cat, dict):
+                        category = cat.get("category", "")
+                        desc = cat.get("description", "")
+                        questions = cat.get("questions", [])
+                        question_text = ", ".join(q.get("question", "") for q in questions[:3]) if questions else ""
+                        lines.append(f"| {category} | {desc} | {question_text} |")
+                lines.append("")
+
+                for cat in value:
+                    if isinstance(cat, dict):
+                        category = cat.get("category", "")
+                        lines.append(f"#### {category}\n")
+                        questions = cat.get("questions", [])
+                        if questions:
+                            for i, q in enumerate(questions, 1):
+                                if isinstance(q, dict):
+                                    lines.append(f"**{i}. {q.get('question', '')}**\n")
+                                    for k, v in q.items():
+                                        if k == "question":
+                                            continue
+                                        if isinstance(v, list):
+                                            lines.append(f"- **{format_label(k)}**:")
+                                            lines.extend(f"  - {sub}" for sub in v)
+                                        elif isinstance(v, str):
+                                            lines.append(f"- **{format_label(k)}**: {v}")
+                                    lines.append("")
+
+        elif key == "projects":
+            lines.append(f"### {label}\n")
+            if isinstance(value, list):
+                for i, proj in enumerate(value, 1):
+                    if isinstance(proj, dict):
+                        proj_name = proj.get("project_name", "")
+                        lines.append(f"**{i}. {proj_name}**\n")
+                        for k, v in proj.items():
+                            if k == "project_name":
+                                continue
+                            if k in ("predicted_questions", "tech_deep_dive"):
+                                lines.append(f"- **{format_label(k)}**:")
+                                if isinstance(v, list):
+                                    for item in v:
+                                        question = item.get("question", "") or item.get("tech", "") if isinstance(item, dict) else item
+                                        lines.append(f"  - {question}")
+                            elif isinstance(v, str):
+                                lines.append(f"- **{format_label(k)}**: {v}")
+                        lines.append("")
+
+        elif key in RESOURCE_KEYS:
+            lines.append(f"### {label}\n")
+            if isinstance(value, list):
+                lines.extend(f"- {item}" for item in value)
+                lines.append("")
+
+        elif isinstance(value, str):
+            lines.append(f"### {label}\n")
+            lines.append(f"{value}\n")
+
+        elif isinstance(value, list):
+            lines.append(f"### {label}\n")
+            lines.extend(_format_list_items(value))
+            lines.append("")
+
+    return lines
 
 
 def run_task(task_id, position_name, jd_type, jd_content, resume_path, count):
@@ -234,155 +384,22 @@ def export_report(report_id):
     position_name = report.get('position_name', '未知岗位')
     created_at = report.get('created_at', '')
     modules = report.get('modules', {})
-    
-    md_content = f"# 🎯 {position_name} - 面试分析报告\n\n"
-    md_content += f"**生成时间**: {created_at}\n\n"
-    md_content += "---\n\n"
 
-    module_icons = {
-        "overall_evaluation": "📊",
-        "job_analysis": "💼",
-        "high_freq_categories": "📚",
-        "high_freq_list": "📝",
-        "project_deep_dive": "🔍",
-        "behavioral_prep": "🤝",
-        "on_site_strategies": "⚡",
-        "recommended_resources": "📖",
-    }
+    md_lines = [f"# 🎯 {position_name} - 面试分析报告\n", f"**生成时间**: {created_at}\n", "---\n"]
 
     for module_key, module_name in MODULE_NAMES.items():
         module_data = modules.get(module_key, {})
         if not module_data:
             continue
-            
-        icon = module_icons.get(module_key, "📄")
-        md_content += f"## {icon} {module_name}\n\n"
 
-        if isinstance(module_data, dict):
-            sorted_items = sorted(module_data.items(), key=lambda x: (
-                0 if x[0] in ("question", "questions", "predicted_questions", "possible_questions", "summary", "match_score") else 1
-            ))
-            
-            for key, value in sorted_items:
-                label = format_label(key)
-                
-                if key == "summary" or key == "match_score" or key == "match_level":
-                    md_content += f"### {label}\n\n"
-                    if isinstance(value, (int, float)):
-                        md_content += f"**{value}**\n\n"
-                    else:
-                        md_content += f"{value}\n\n"
-                elif key == "resume_suggestions" or key == "core_requirements" or key == "tech_stack" or key == "soft_skills":
-                    md_content += f"### {label}\n\n"
-                    if isinstance(value, list):
-                        for item in value:
-                            md_content += f"- {item}\n"
-                        md_content += "\n"
-                elif key == "questions" or key == "predicted_questions" or key == "possible_questions":
-                    md_content += f"### {label}\n\n"
-                    if isinstance(value, list):
-                        for i, item in enumerate(value, 1):
-                            if isinstance(item, dict):
-                                question = item.get("question", "")
-                                md_content += f"**{i}. {question}**\n\n"
-                                
-                                for k, v in item.items():
-                                    if k == "question":
-                                        continue
-                                    elif k in ("frequency", "difficulty", "depth", "match_score"):
-                                        md_content += f"- **{format_label(k)}**: {v}\n"
-                                    elif isinstance(v, list):
-                                        md_content += f"- **{format_label(k)}**:\n"
-                                        for sub_item in v:
-                                            md_content += f"  - {sub_item}\n"
-                                    elif isinstance(v, str):
-                                        md_content += f"- **{format_label(k)}**: {v}\n"
-                                md_content += "\n"
-                            else:
-                                md_content += f"{i}. {item}\n"
-                        md_content += "\n"
-                elif key == "categories":
-                    md_content += f"### {label}\n\n"
-                    if isinstance(value, list):
-                        md_content += "| 维度 | 考察重点 | 准备建议 |\n"
-                        md_content += "|------|----------|----------|\n"
-                        for cat in value:
-                            if isinstance(cat, dict):
-                                category = cat.get("category", "")
-                                desc = cat.get("description", "")
-                                questions = cat.get("questions", [])
-                                question_text = ", ".join([q.get("question", "") for q in questions[:3]]) if questions else ""
-                                md_content += f"| {category} | {desc} | {question_text} |\n"
-                        md_content += "\n"
-                        
-                        for cat in value:
-                            if isinstance(cat, dict):
-                                category = cat.get("category", "")
-                                md_content += f"#### {category}\n\n"
-                                questions = cat.get("questions", [])
-                                if questions:
-                                    for i, q in enumerate(questions, 1):
-                                        if isinstance(q, dict):
-                                            question = q.get("question", "")
-                                            md_content += f"**{i}. {question}**\n\n"
-                                            for k, v in q.items():
-                                                if k == "question":
-                                                    continue
-                                                elif isinstance(v, list):
-                                                    md_content += f"- **{format_label(k)}**:\n"
-                                                    for sub_item in v:
-                                                        md_content += f"  - {sub_item}\n"
-                                                elif isinstance(v, str):
-                                                    md_content += f"- **{format_label(k)}**: {v}\n"
-                                            md_content += "\n"
-                elif key == "projects":
-                    md_content += f"### {label}\n\n"
-                    if isinstance(value, list):
-                        for i, proj in enumerate(value, 1):
-                            if isinstance(proj, dict):
-                                proj_name = proj.get("project_name", "")
-                                md_content += f"**{i}. {proj_name}**\n\n"
-                                
-                                for k, v in proj.items():
-                                    if k == "project_name":
-                                        continue
-                                    elif k == "predicted_questions" or k == "tech_deep_dive":
-                                        md_content += f"- **{format_label(k)}**:\n"
-                                        if isinstance(v, list):
-                                            for item in v:
-                                                if isinstance(item, dict):
-                                                    question = item.get("question", "") or item.get("tech", "")
-                                                    md_content += f"  - {question}\n"
-                                                else:
-                                                    md_content += f"  - {item}\n"
-                                    elif isinstance(v, str):
-                                        md_content += f"- **{format_label(k)}**: {v}\n"
-                                md_content += "\n"
-                elif key == "books" or key == "courses" or key == "websites" or key == "interview_exps":
-                    md_content += f"### {label}\n\n"
-                    if isinstance(value, list):
-                        for item in value:
-                            md_content += f"- {item}\n"
-                        md_content += "\n"
-                elif isinstance(value, str):
-                    md_content += f"### {label}\n\n"
-                    md_content += f"{value}\n\n"
-                elif isinstance(value, list):
-                    md_content += f"### {label}\n\n"
-                    for item in value:
-                        if isinstance(item, dict):
-                            for k, v in item.items():
-                                md_content += f"- **{format_label(k)}**: {v}\n"
-                            md_content += "\n"
-                        else:
-                            md_content += f"- {item}\n"
-                    md_content += "\n"
-
-        md_content += "---\n\n"
+        icon = MODULE_ICONS.get(module_key, "📄")
+        md_lines.append(f"## {icon} {module_name}\n")
+        md_lines.extend(_format_module_to_markdown(module_key, module_data))
+        md_lines.append("---\n")
 
     export_path = os.path.join(REPORTS_FOLDER, f"{report_id}.md")
     with open(export_path, "w", encoding="utf-8") as f:
-        f.write(md_content)
+        f.write("\n".join(md_lines))
 
     return send_file(export_path, as_attachment=True, download_name=f"{report_id}.md")
 

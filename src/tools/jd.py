@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import base64
 from typing import Dict, Any, List
 import dashscope
@@ -13,22 +15,27 @@ dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
 logger = get_logger("tools.jd")
 
 SUPPORTED_FORMATS = {".jpg", ".jpeg", ".png", ".webp"}
+MIME_MAP = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
 
 
-def _image_to_base64(image_path: str) -> str:
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-
-def _get_mime_type(image_path: str) -> str:
+def _image_to_data_uri(image_path: str) -> str:
     ext = os.path.splitext(image_path)[1].lower()
-    mime_map = {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".webp": "image/webp",
-    }
-    return mime_map.get(ext, "image/jpeg")
+    mime_type = MIME_MAP.get(ext, "image/jpeg")
+    with open(image_path, "rb") as f:
+        base64_image = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:{mime_type};base64,{base64_image}"
+
+
+def _extract_json(text: str) -> Dict[str, Any]:
+    json_match = re.search(r'\{[\s\S]*\}', text)
+    if json_match:
+        return json.loads(json_match.group(0))
+    return json.loads(text)
 
 
 def analyze_jd_screenshot(image_path: str) -> Dict[str, Any]:
@@ -44,9 +51,7 @@ def analyze_jd_screenshot(image_path: str) -> Dict[str, Any]:
         import time
         start_time = time.time()
 
-        base64_image = _image_to_base64(image_path)
-        mime_type = _get_mime_type(image_path)
-        image_data_uri = f"data:{mime_type};base64,{base64_image}"
+        image_data_uri = _image_to_data_uri(image_path)
 
         messages = [
             {
@@ -69,16 +74,7 @@ def analyze_jd_screenshot(image_path: str) -> Dict[str, Any]:
 
         if response.status_code == 200:
             content = response.output.choices[0].message.content[0]["text"]
-            import json
-            import re
-            
-            json_match = re.search(r'\{[\s\S]*\}', content)
-            if json_match:
-                json_str = json_match.group(0)
-                result = json.loads(json_str)
-            else:
-                return {"error": f"无法从响应中提取JSON: {content[:200]}"}
-            
+            result = _extract_json(content)
             result["raw_text"] = result.get("raw_text", content)
         else:
             return {"error": f"API error: {response.message}", "image_path": image_path}

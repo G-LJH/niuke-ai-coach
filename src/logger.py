@@ -54,6 +54,21 @@ def get_logger(module_name: str) -> logging.Logger:
     return logger
 
 
+def _log_record(logger: logging.Logger, module_name: str, message: str, extra_data: dict):
+    record = logger.makeRecord(
+        logger.name,
+        logging.INFO,
+        "",
+        0,
+        message,
+        (),
+        None,
+    )
+    record.module_name = module_name
+    record.extra_data = extra_data
+    logger.handle(record)
+
+
 def log_tool_call(
     logger: logging.Logger,
     tool_name: str,
@@ -61,24 +76,14 @@ def log_tool_call(
     status: str,
     error: str = None,
 ):
-    record = logger.makeRecord(
-        logger.name,
-        logging.INFO,
-        "",
-        0,
-        f"Tool call: {tool_name}",
-        (),
-        None,
-    )
-    record.module_name = "tool"
-    record.extra_data = {
+    extra_data = {
         "tool": tool_name,
         "duration_ms": duration_ms,
         "status": status,
     }
     if error:
-        record.extra_data["error"] = error
-    logger.handle(record)
+        extra_data["error"] = error
+    _log_record(logger, "tool", f"Tool call: {tool_name}", extra_data)
 
 
 def log_workflow_step(
@@ -88,23 +93,12 @@ def log_workflow_step(
     step_name: str,
     status: str,
 ):
-    record = logger.makeRecord(
-        logger.name,
-        logging.INFO,
-        "",
-        0,
-        f"Workflow step: {step_name}",
-        (),
-        None,
-    )
-    record.module_name = "workflow"
-    record.extra_data = {
+    _log_record(logger, "workflow", f"Workflow step: {step_name}", {
         "workflow_id": workflow_id,
         "step": step,
         "step_name": step_name,
         "status": status,
-    }
-    logger.handle(record)
+    })
 
 
 def log_api_call(
@@ -115,21 +109,10 @@ def log_api_call(
     duration_ms: int,
     status: str = "success",
 ):
-    record = logger.makeRecord(
-        logger.name,
-        logging.INFO,
-        "",
-        0,
-        f"API call: {model_name}",
-        (),
-        None,
-    )
-    record.module_name = "api"
-    record.extra_data = {
+    _log_record(logger, "api", f"API call: {model_name}", {
         "model": model_name,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "duration_ms": duration_ms,
         "status": status,
-    }
-    logger.handle(record)
+    })

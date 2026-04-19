@@ -61,6 +61,97 @@ def generate_workflow_id(position_name: str) -> str:
     return f"report_{timestamp}_{pos_hash}"
 
 
+def _update_progress(workflow_id, step, step_name, status, data=None, error=None, progress_callback=None, step_text=None):
+    update_workflow_status(workflow_id, step, step_name, status, data=data, error=error)
+    log_workflow_step(logger, workflow_id, step, step_name, status)
+    if progress_callback and step_text:
+        progress_callback(step_text)
+
+
+def _handle_error(workflow_id, error):
+    workflow = get_workflow(workflow_id)
+    update_workflow_status(
+        workflow_id,
+        workflow["step"],
+        workflow["step_name"],
+        "failed",
+        error={
+            "code": "WORKFLOW_ERROR",
+            "message": str(error),
+            "detail": {},
+        },
+    )
+    return {
+        "success": False,
+        "error": {
+            "code": "WORKFLOW_ERROR",
+            "message": str(error),
+            "step": workflow["step"],
+            "step_name": workflow["step_name"],
+        },
+    }
+
+
+def _fetch_interview_exps(position, count):
+    exp_urls = search_interview_exps(position=position, count=count)
+    urls_found = [u["url"] for u in exp_urls]
+
+    exps = []
+    urls_success = []
+    urls_failed = []
+
+    for url_info in exp_urls:
+        url = url_info["url"]
+        success = False
+        for retry in range(3):
+            result = fetch_interview_content(url)
+            if "error" not in result:
+                exps.append(result)
+                urls_success.append(url)
+                success = True
+                break
+            if retry < 2:
+                time.sleep(60)
+
+        if not success:
+            urls_failed.append({"url": url, "error": result.get("error", "unknown")})
+
+    return exp_urls, exps, urls_found, urls_success, urls_failed
+
+
+def _generate_report_modules(module_names, system_prompt, progress_callback=None):
+    modules_generated = []
+    modules_failed = []
+    modules_data = {}
+    total_input_tokens = 0
+    total_output_tokens = 0
+
+    for module_name in module_names:
+        try:
+            logger.info(f"生成模块: {module_name}")
+            prompt = MODULE_PROMPTS[module_name]
+            result = call_llm(prompt, system_prompt=system_prompt)
+
+            if "error" in result:
+                logger.error(f"模块 {module_name} 生成失败: {result['error']}")
+                modules_failed.append(module_name)
+                continue
+
+            module_content = json.loads(result["content"])
+            modules_data[module_name] = module_content
+            modules_generated.append(module_name)
+            logger.info(f"模块 {module_name} 生成成功")
+
+            total_input_tokens += result["usage"]["input_tokens"]
+            total_output_tokens += result["usage"]["output_tokens"]
+
+        except Exception as e:
+            logger.error(f"模块 {module_name} 生成失败: {e}")
+            modules_failed.append(module_name)
+
+    return modules_generated, modules_failed, modules_data, total_input_tokens, total_output_tokens
+
+
 def generate_interview_report(
     position_name: str,
     jd_input: Optional[Dict[str, str]] = None,
@@ -82,10 +173,7 @@ def generate_interview_report(
     try:
         jd_text = None
 
-        update_workflow_status(workflow_id, 1, "parse_input", "running")
-        log_workflow_step(logger, workflow_id, 1, "parse_input", "running")
-        if progress_callback:
-            progress_callback("解析输入信息")
+        _update_progress(workflow_id, 1, "parse_input", "running", progress_callback=progress_callback, step_text="解析输入信息")
 
         if jd_input:
             if jd_input.get("type") == "image":
@@ -116,37 +204,9 @@ def generate_interview_report(
         if time.time() - start_time > STEP_TIMEOUTS[1]:
             raise Exception("步骤1超时")
 
-        update_workflow_status(workflow_id, 2, "fetch_interview_exps", "running")
-        log_workflow_step(logger, workflow_id, 2, "fetch_interview_exps", "running")
-        if progress_callback:
-            progress_callback("抓取面经数据")
+        _update_progress(workflow_id, 2, "fetch_interview_exps", "running", progress_callback=progress_callback, step_text="抓取面经数据")
 
-        exp_urls = search_interview_exps(position=position_name, count=crawl_count)
-        urls_found = [u["url"] for u in exp_urls]
-
-        exps = []
-        urls_success = []
-        urls_failed = []
-
-        for url_info in exp_urls:
-            url = url_info["url"]
-            retry = 0
-            max_retries = 3
-            success = False
-
-            while retry < max_retries and not success:
-                result = fetch_interview_content(url)
-                if "error" not in result:
-                    exps.append(result)
-                    urls_success.append(url)
-                    success = True
-                else:
-                    retry += 1
-                    if retry < max_retries:
-                        time.sleep(60)
-
-            if not success:
-                urls_failed.append({"url": url, "error": result.get("error", "unknown")})
+        exp_urls, exps, urls_found, urls_success, urls_failed = _fetch_interview_exps(position_name, crawl_count)
 
         success_rate = len(urls_success) / len(urls_found) if urls_found else 0
         if success_rate == 0:
@@ -176,16 +236,7 @@ def generate_interview_report(
         if time.time() - start_time > STEP_TIMEOUTS[2]:
             raise Exception("步骤2超时")
 
-        update_workflow_status(workflow_id, 3, "generate_report_modules", "running")
-        log_workflow_step(logger, workflow_id, 3, "generate_report_modules", "running")
-        if progress_callback:
-            progress_callback("生成报告模块")
-
-        modules_generated = []
-        modules_failed = []
-        modules_data = {}
-        total_input_tokens = 0
-        total_output_tokens = 0
+        _update_progress(workflow_id, 3, "generate_report_modules", "running", progress_callback=progress_callback, step_text="生成报告模块")
 
         system_prompt = f"""你是专业的面试辅导专家。
 岗位名称：{position_name}
@@ -195,47 +246,14 @@ def generate_interview_report(
 
 请根据以上信息生成面试分析报告模块。只返回JSON格式，不要其他文字。"""
 
-        for module_name in MODULE_NAMES:
-            try:
-                logger.info(f"生成模块: {module_name}")
-                prompt = MODULE_PROMPTS[module_name]
-                result = call_llm(prompt, system_prompt=system_prompt)
-
-                if "error" in result:
-                    logger.error(f"模块 {module_name} 生成失败: {result['error']}")
-                    modules_failed.append(module_name)
-                    continue
-
-                module_content = json.loads(result["content"])
-                modules_data[module_name] = module_content
-                modules_generated.append(module_name)
-                logger.info(f"模块 {module_name} 生成成功")
-
-                total_input_tokens += result["usage"]["input_tokens"]
-                total_output_tokens += result["usage"]["output_tokens"]
-
-                update_workflow_status(
-                    workflow_id,
-                    3,
-                    "generate_report_modules",
-                    "running",
-                    data={
-                        "modules_generated": modules_generated,
-                        "modules_failed": modules_failed,
-                    },
-                )
-
-            except Exception as e:
-                logger.error(f"模块 {module_name} 生成失败: {e}")
-                modules_failed.append(module_name)
+        modules_generated, modules_failed, modules_data, _, _ = _generate_report_modules(
+            MODULE_NAMES, system_prompt, progress_callback
+        )
 
         if time.time() - start_time > STEP_TIMEOUTS[3]:
             raise Exception("步骤3超时")
 
-        update_workflow_status(workflow_id, 4, "save_report", "running")
-        log_workflow_step(logger, workflow_id, 4, "save_report", "running")
-        if progress_callback:
-            progress_callback("保存报告")
+        _update_progress(workflow_id, 4, "save_report", "running", progress_callback=progress_callback, step_text="保存报告")
 
         report_id = workflow_id
         report = {
@@ -271,26 +289,7 @@ def generate_interview_report(
         }
 
     except Exception as e:
-        update_workflow_status(
-            workflow_id,
-            get_workflow(workflow_id)["step"],
-            get_workflow(workflow_id)["step_name"],
-            "failed",
-            error={
-                "code": "WORKFLOW_ERROR",
-                "message": str(e),
-                "detail": {},
-            },
-        )
-        return {
-            "success": False,
-            "error": {
-                "code": "WORKFLOW_ERROR",
-                "message": str(e),
-                "step": get_workflow(workflow_id)["step"],
-                "step_name": get_workflow(workflow_id)["step_name"],
-            },
-        }
+        return _handle_error(workflow_id, e)
 
 
 def _resume_workflow(workflow_id: str) -> Dict[str, Any]:
