@@ -17,8 +17,39 @@ document.addEventListener("DOMContentLoaded", () => {
     initJDTypeSwitch();
     initFileUploads();
     initFormSubmit();
+    initNavigation();
     loadHistory();
 });
+
+function initNavigation() {
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = link.getAttribute('href').substring(1);
+            const targetSection = document.getElementById(targetId);
+            if (targetSection) {
+                targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                navLinks.forEach(l => l.classList.remove('active'));
+                link.classList.add('active');
+            }
+        });
+    });
+
+    const sections = document.querySelectorAll('section[id]');
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const id = entry.target.getAttribute('id');
+                navLinks.forEach(link => {
+                    link.classList.toggle('active', link.getAttribute('href') === `#${id}`);
+                });
+            }
+        });
+    }, { threshold: 0.3 });
+
+    sections.forEach(section => observer.observe(section));
+}
 
 function initJDTypeSwitch() {
     const radios = document.querySelectorAll('input[name="jd-type"]');
@@ -273,10 +304,10 @@ function resetButton() {
     const btn = document.getElementById("generate-btn");
     btn.disabled = false;
     btn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
         </svg>
-        开始生成报告
+        <span>开始生成报告</span>
     `;
 }
 
@@ -342,11 +373,22 @@ function renderModule(moduleKey, report) {
         });
         html += '</div>';
         container.innerHTML = html;
+        initModuleCollapse();
     } else if (modules[moduleKey]) {
         container.innerHTML = renderModuleCard(moduleKey, MODULE_NAMES[moduleKey], modules[moduleKey], true);
+        initModuleCollapse();
     } else {
         container.innerHTML = '<p class="empty-text">该模块暂无内容</p>';
     }
+}
+
+function initModuleCollapse() {
+    document.querySelectorAll('.module-card-header').forEach(header => {
+        header.addEventListener('click', () => {
+            const card = header.closest('.module-card');
+            card.classList.toggle('collapsed');
+        });
+    });
 }
 
 function renderModuleCard(key, name, data, isSingle = false) {
@@ -364,7 +406,7 @@ function renderModuleCard(key, name, data, isSingle = false) {
     const icon = icons[key] || "📄";
 
     return `
-        <div class="module-card ${isSingle ? 'single' : ''}">
+        <div class="module-card ${isSingle ? 'single' : ''}" data-module="${key}">
             <div class="module-card-header">
                 <span class="module-icon">${icon}</span>
                 <h3>${name}</h3>
@@ -400,19 +442,19 @@ function renderModuleContent(data, depth = 0) {
                 Object.entries(ordered).forEach(([key, value]) => {
                     const label = formatLabel(key);
                     if (key === "question" || key === "project_name") {
-                        html += `<div class="item-field item-field-title"><span class="field-label">${index + 1}. ${label}:</span><span class="field-value">${value}</span></div>`;
+                        html += `<div class="item-field item-field-title"><span class="field-label">${index + 1}. ${label}</span><span class="field-value">${value}</span></div>`;
                     } else if (typeof value === "string") {
-                        html += `<div class="item-field"><span class="field-label">${label}:</span><span class="field-value">${value}</span></div>`;
+                        html += `<div class="item-field"><span class="field-label">${label}</span><span class="field-value">${value}</span></div>`;
                     } else if (Array.isArray(value)) {
                         if (value.length > 0 && typeof value[0] === "object") {
-                            html += `<div class="item-field"><span class="field-label">${label}:</span><div class="field-value">${renderModuleContent(value, depth + 1)}</div></div>`;
+                            html += `<div class="item-field"><span class="field-label">${label}</span><div class="field-value">${renderModuleContent(value, depth + 1)}</div></div>`;
                         } else {
-                            html += `<div class="item-field"><span class="field-label">${label}:</span><div class="field-value">${value.map(v => `<span class="tag">${v}</span>`).join('')}</div></div>`;
+                            html += `<div class="item-field"><span class="field-label">${label}</span><div class="field-value">${value.map(v => `<span class="tag">${v}</span>`).join('')}</div></div>`;
                         }
                     } else if (typeof value === "object" && value !== null) {
-                        html += `<div class="item-field"><span class="field-label">${label}:</span><div class="field-value">${renderModuleContent(value, depth + 1)}</div></div>`;
+                        html += `<div class="item-field"><span class="field-label">${label}</span><div class="field-value">${renderModuleContent(value, depth + 1)}</div></div>`;
                     } else if (value !== undefined && value !== null) {
-                        html += `<div class="item-field"><span class="field-label">${label}:</span><span class="field-value">${value}</span></div>`;
+                        html += `<div class="item-field"><span class="field-label">${label}</span><span class="field-value">${value}</span></div>`;
                     }
                 });
                 html += `</div>`;
